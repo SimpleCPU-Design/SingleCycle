@@ -37,8 +37,8 @@ module mux2_1 (
 );
     wire nsel, wa, wb;
     not n_1(nsel, sel);
-    and a_1(wa, a, sel);
-    and a_2(wb, b, nsel);
+    and a_1(wa, a, nsel);
+    and a_2(wb, b, sel);
     or o_1(y, wa, wb);
 endmodule
 
@@ -64,7 +64,7 @@ module mux4_1_64 (
     input [63:0] b,
     input [63:0] c,
     input [63:0] d,
-    input [1:0] sel,
+    input [1:0] sel
 );
     wire [63:0] w0, w1;
     mux2_1_64 u0(
