@@ -125,6 +125,146 @@ module mux8_1_64 (
     );
 endmodule
 
+// --- 16-to-1 MUX (64-bit) (Cascaded) ---
+module mux16_1_64 (
+    output [63:0] y,
+    input [63:0] a0,
+    input [63:0] a1,
+    input [63:0] a2,
+    input [63:0] a3,
+    input [63:0] a4,
+    input [63:0] a5,
+    input [63:0] a6,
+    input [63:0] a7,
+    input [63:0] a8,
+    input [63:0] a9,
+    input [63:0] a10,
+    input [63:0] a11,
+    input [63:0] a12,
+    input [63:0] a13,
+    input [63:0] a14,
+    input [63:0] a15,
+    input [3:0] sel
+);
+    wire [63:0] w0, w1;
+    mux8_1_64 u0(
+        .y(w0),
+        .a0(a0),
+        .a1(a1),
+        .a2(a2),
+        .a3(a3),
+        .a4(a4),
+        .a5(a5),
+        .a6(a6),
+        .a7(a7),
+        .sel(sel[2:0])
+    );
+    mux8_1_64 u1(
+        .y(w1),
+        .a0(a8),
+        .a1(a9),
+        .a2(a10),
+        .a3(a11),
+        .a4(a12),
+        .a5(a13),
+        .a6(a14),
+        .a7(a15),
+        .sel(sel[2:0])
+    );
+    mux2_1_64 u2(
+        .y(y),
+        .a(w0),
+        .b(w1),
+        .sel(sel[3])
+    );
+endmodule
+
+// --- 32-to-1 MUX (64-bit) (Cascaded) ---
+module mux32_1_64 (
+    output [63:0] y,
+    input [63:0] a0,
+    input [63:0] a1,
+    input [63:0] a2,
+    input [63:0] a3,
+    input [63:0] a4,
+    input [63:0] a5,
+    input [63:0] a6,
+    input [63:0] a7,
+    input [63:0] a8,
+    input [63:0] a9,
+    input [63:0] a10,
+    input [63:0] a11,
+    input [63:0] a12,
+    input [63:0] a13,
+    input [63:0] a14,
+    input [63:0] a15,
+    input [63:0] a16,
+    input [63:0] a17,
+    input [63:0] a18,
+    input [63:0] a19,
+    input [63:0] a20,
+    input [63:0] a21,
+    input [63:0] a22,
+    input [63:0] a23,
+    input [63:0] a24,
+    input [63:0] a25,
+    input [63:0] a26,
+    input [63:0] a27,
+    input [63:0] a28,
+    input [63:0] a29,
+    input [63:0] a30,
+    input [63:0] a31,
+    input [4:0] sel
+);
+    wire [63:0] w0, w1;
+    mux16_1_64 u0(
+        .y(w0),
+        .a0(a0),
+        .a1(a1),
+        .a2(a2),
+        .a3(a3),
+        .a4(a4),
+        .a5(a5),
+        .a6(a6),
+        .a7(a7),
+        .a8(a8),
+        .a9(a9),
+        .a10(a10),
+        .a11(a11),
+        .a12(a12),
+        .a13(a13),
+        .a14(a14),
+        .a15(a15),
+        .sel(sel[3:0])
+    );
+    mux16_1_64 u1(
+        .y(w1),
+        .a0(a16),
+        .a1(a17),
+        .a2(a18),
+        .a3(a19),
+        .a4(a20),
+        .a5(a21),
+        .a6(a22),
+        .a7(a23),
+        .a8(a24),
+        .a9(a25),
+        .a10(a26),
+        .a11(a27),
+        .a12(a28),
+        .a13(a29),
+        .a14(a30),
+        .a15(a31),
+        .sel(sel[3:0])
+    );
+    mux2_1_64 u2(
+        .y(y),
+        .a(w0),
+        .b(w1),
+        .sel(sel[4])
+    );
+endmodule
+
 // --- 5-to-32 Decoder ---
 module decoder5_32 (
     output [31:0] y,
