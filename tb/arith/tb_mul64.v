@@ -51,7 +51,7 @@ module tb_mul64;
 
     integer i;
     initial begin
-        $dumpfile("../../sim/dump.vcd");
+        $dumpfile("sim/dump.vcd");
         $dumpvars(0, tb_mul64);
 
         // --- UNSIGNED ---
