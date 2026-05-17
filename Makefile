@@ -22,6 +22,9 @@ RTL_MULT := rtl/arith/mul64.v
 RTL_DIV_SC := rtl/arith/div64_sc.v
 RTL_ARITH := $(RTL_ADD) $(RTL_SHIFT) $(RTL_MULT) $(RTL_DIV_SC)
 
+RTL_ALU := rtl/alu/alu.v
+RTL_ALU_CONTROL :=  rtl/alu/alu_control.v
+
 
 RTL_COMMON := $(RTL_PRIMS) $(RTL_ARITH)
 
@@ -33,6 +36,9 @@ TB_SHIFT := tb/arith/tb_barrel_shift.v
 TB_MULT := tb/arith/tb_mul64.v
 TB_DIV_SC := tb/arith/tb_div64_sc.v
 TB_ARITH := $(TB_ADD) $(TB_SHIFT) $(TB_MULT) $(TB_DIV_SC)
+
+TB_ALU := tb/alu/tb_alu.v
+TB_ALU_CONTROL := tb/alu/tb_alu_control.v
 
 
 # Simulation Binaries
@@ -46,6 +52,9 @@ BIN_MULT := $(SIM_DIR)/tb_mul64
 BIN_DIV_SC := $(SIM_DIR)/tb_div64_sc
 BIN_ARITH := $(SIM_DIR)/tb_arith
 
+BIN_ALU := $(SIM_DIR)/tb_alu
+BIN_ALU_CONTROL := $(SIM_DIR)/tb_alu_control
+
 VCD := $(SIM_DIR)/dump.vcd
 
 # Verilator build dirs
@@ -56,17 +65,20 @@ VDIR_SHIFT:= $(VSIM_DIR)/tb_barrel_shift
 VDIR_MULT := $(VSIM_DIR)/tb_mul64
 VDIR_DIV_SC := $(VSIM_DIR)/tb_div64_sc
 
+VDIR_ALU := $(VSIM_DIR)/tb_alu
+VDIR_ALU_CONTROL := $(VSIM_DIR)/tb_alu_control
+
 .PHONY: all compile run wave clean \
-		compile_prims compile_adder compile_shifter compile_mult compile_div_sc \
-		run_prims run_adder run_shifter run_mult run_div_sc \
-		vcompile_prims vcompile_adder vcompile_shifter vcompile_mult vcompile_div_sc \
-		vrun_prims vrun_adder vrun_shifter vrun_mult vrun_div_sc vclean
+		compile_prims compile_adder compile_shifter compile_mult compile_div_sc compile_alu compile_alu_control \
+		run_prims run_adder run_shifter run_mult run_div_sc run_alu run_alu_control \
+		vcompile_prims vcompile_adder vcompile_shifter vcompile_mult vcompile_div_sc vcompile_alu vcompile_alu_control \
+		vrun_prims vrun_adder vrun_shifter vrun_mult vrun_div_sc vrun_alu vrun_alu_control vclean
 
 # Default -> compile + run all
 all: run
 
 # Compile Targets
-compile: compile_prims compile_adder compile_shifter compile_mult compile_div_sc
+compile: compile_prims compile_adder compile_shifter compile_mult compile_div_sc compile_alu compile_alu_control
 
 compile_prims:
 	@mkdir -p $(SIM_DIR)
@@ -98,6 +110,16 @@ compile_arith:
 	$(IVERILOG) $(IFLAGS) -o $(BIN_ARITH) \
 	$(TB_ARITH) $(RTL_PRIMS) $(RTL_ARITH)
 
+compile_alu:
+	@mkdir -p $(SIM_DIR)
+	$(IVERILOG) $(IFLAGS) -o $(BIN_ALU) \
+	$(TB_ALU) $(RTL_ALU) $(RTL_PRIMS) $(RTL_ARITH)
+
+compile_alu_control:
+	@mkdir -p $(SIM_DIR)
+	$(IVERILOG) $(IFLAGS) -o $(BIN_ALU_CONTROL) \
+	$(TB_ALU_CONTROL) $(RTL_ALU_CONTROL) $(RTL_PRIMS) $(RTL_ARITH)
+
 	
 # Run Targets
 run: run_prims run_arith
@@ -119,6 +141,12 @@ run_div_sc: compile_div_sc
 
 run_arith: compile_arith
 	$(VVP) $(BIN_ARITH)
+
+run_alu: compile_alu
+	$(VVP) $(BIN_ALU)
+
+run_alu_control: compile_alu_control
+	$(VVP) $(BIN_ALU_CONTROL)
 
 
 # Wave Targets (run + wave)
@@ -157,6 +185,16 @@ vcompile_div_sc:
 	$(VERILATOR) $(VFLAGS) --top-module tb_div64_sc --Mdir $(VDIR_DIV_SC) \
 	  $(TB_DIV_SC) $(RTL_PRIMS) $(RTL_ADD) $(RTL_DIV_SC)
 
+vcompile_alu:
+	@mkdir -p $(VDIR_ALU)
+	$(VERILATOR) $(VFLAGS) --top-module tb_alu --Mdir $(VDIR_ALU) \
+	  $(TB_ALU) $(RTL_ALU) $(RTL_PRIMS) $(RTL_ARITH)
+
+vcompile_alu_control:
+	@mkdir -p $(VDIR_ALU_CONTROL)
+	$(VERILATOR) $(VFLAGS) --top-module tb_alu_control --Mdir $(VDIR_ALU_CONTROL) \
+	  $(TB_ALU_CONTROL) $(RTL_ALU_CONTROL) $(RTL_PRIMS) $(RTL_ARITH)
+
 vrun_prims: vcompile_prims
 	./$(VDIR_PRIM)/Vtb_primitives
 
@@ -172,6 +210,12 @@ vrun_mult: vcompile_mult
 vrun_div_sc: vcompile_div_sc
 	./$(VDIR_DIV_SC)/Vtb_div64_sc
 
+vrun_alu: vcompile_alu
+	./$(VDIR_ALU)/Vtb_alu
+
+vrun_alu_control: vcompile_alu_control
+	./$(VDIR_ALU_CONTROL)/Vtb_alu_control
+	
 
 vclean:
 	rm -rf $(VSIM_DIR)
