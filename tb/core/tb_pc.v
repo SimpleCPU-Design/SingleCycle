@@ -57,6 +57,10 @@ module tb_pc;
     endtask
 
     // --- Advance one clock with given inputs, update reference, check ---
+    //   Drive inputs immediately (just after the previous negedge) so they are
+    //   stable across the upcoming posedge that latches them, then sample at the
+    //   following negedge -- far from any clock edge.  This avoids the
+    //   posedge+#1 sampling race that Icarus and Verilator schedule differently.
     task step;
         input            twrite, tbtaken;
         input [63:0]     ttarget;
@@ -65,12 +69,11 @@ module tb_pc;
             pc_write      = twrite;
             branch_taken  = tbtaken;
             branch_target = ttarget;
-            @(posedge clk);
             if (twrite) begin
                 if (tbtaken) exp_pc = ttarget;
                 else         exp_pc = exp_pc + 64'd4;
             end
-            #1;                 // let combinational outputs settle
+            @(negedge clk);     // posedge in between latched the inputs; pc stable
             check(tag);
         end
     endtask
@@ -79,14 +82,13 @@ module tb_pc;
     task do_reset;
         input [8*40-1:0] tag;
         begin
-            rst           = 1'b1;
+            rst           = 1'b1;   // latched at the upcoming posedge -> pc = 0
             pc_write      = 1'b1;   // rst must dominate regardless
             branch_taken  = 1'b0;
             branch_target = 64'h0;
-            @(posedge clk);
-            exp_pc = 64'h0;
-            rst    = 1'b0;
-            #1;
+            exp_pc        = 64'h0;
+            @(negedge clk);         // pc now reset; deassert before next cycle
+            rst = 1'b0;
             check(tag);
         end
     endtask
