@@ -42,8 +42,6 @@ module tb_alu;
     localparam OP_UMULH  = 6'b001110;
     localparam OP_MADD   = 6'b001111;
     localparam OP_MSUB   = 6'b010000;
-    localparam OP_SDIV   = 6'b010001;
-    localparam OP_UDIV   = 6'b010010;
     localparam OP_PASS_B = 6'b010011;
 
     integer errors = 0;
@@ -163,15 +161,6 @@ module tb_alu;
         check_y(64'd0, 64'd0, 64'd99, OP_MADD, 64'd99,  "MADD c+0");
         check_y(64'd0, 64'd0, 64'd99, OP_MSUB, 64'd99,  "MSUB c-0");
 
-        // DIRECTED — divide
-        check_y(64'd20, 64'd4, 64'b0, OP_UDIV, 64'd5, "UDIV 20/4");
-        check_y(64'd20, 64'd3, 64'b0, OP_UDIV, 64'd6, "UDIV 20/3");
-        check_y(64'd20, 64'd0, 64'b0, OP_UDIV, 64'd0, "UDIV dz");
-        check_y(-64'd20, 64'd4, 64'b0, OP_SDIV, -64'd5, "SDIV -20/4");
-        check_y(-64'd20,-64'd4, 64'b0, OP_SDIV,  64'd5, "SDIV -20/-4");
-        check_y(64'h8000000000000000,-64'd1, 64'b0, OP_SDIV,
-                64'h8000000000000000, "SDIV INT_MIN/-1");
-
         // DIRECTED — PASS_B
         check_y(64'd123, 64'hDEADBEEF, 64'b0, OP_PASS_B, 64'hDEADBEEF, "PASS_B 1");
         check_y(64'b0,   64'b0,        64'b0, OP_PASS_B, 64'b0,        "PASS_B 0");
@@ -237,18 +226,6 @@ module tb_alu;
             check_y(ra, rb, rc,    OP_MADD,  rc + rprod_u[63:0], "rand MADD");
             check_y(ra, rb, rc,    OP_MSUB,  rc - rprod_u[63:0], "rand MSUB");
         end
-
-        // RANDOM — divide
-        for (i = 0; i < 100; i = i + 1) begin
-            ra = {$random, $random};
-            rb = {$random, $random};
-            if (rb == 64'b0) rb = 64'd1;   // skip divide-by-zero here
-            check_y(ra, rb, 64'b0, OP_UDIV, ra / rb,                  "rand UDIV");
-            check_y(ra, rb, 64'b0, OP_SDIV, $signed(ra) / $signed(rb), "rand SDIV");
-        end
-        // Explicit divide-by-zero
-        check_y(64'd123, 64'd0, 64'b0, OP_UDIV, 64'd0, "UDIV dz extra");
-        check_y(64'd123, 64'd0, 64'b0, OP_SDIV, 64'd0, "SDIV dz extra");
 
         // Summary
         $display("---------------------------------------------------");

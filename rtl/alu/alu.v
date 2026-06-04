@@ -1,36 +1,40 @@
 `timescale 1ns/1ps
 
 // ================================================
-//  64-bit ALU. Supports the single-cycle datapath
-// 
+//  64-bit ALU — combinational
+//
 //      arithmetic: ADD, SUB
 //      logical:    AND, ORR, EOR, BIC, ORN
 //      shift:      LSL, LSR, ASR, ROR
-//      multiply:   MUL, SMULH, UMULH, MADD,
-//      divide:     SDIV, UDIV
+//      multiply:   MUL, SMULH, UMULH, MADD, MSUB
 //      move:       PASS_B  (forwards 'b' — used by MOV/MOVZ/etc.)
-// 
+//
+//  SDIV/UDIV are NOT handled here — they live in a separate multi-cycle
+//  div64 unit at the datapath level. The opcodes 010001/010010 are still
+//  reserved in the encoding so alu_control can emit them; the ALU output
+//  is don't-care for those (returns 0) and the datapath selects the
+//  divider's quotient instead.
 //
 //  Inputs:
 //      a, b    -> 64-bit primary operands
 //      c       -> 64-bit third operand (Ra), used by MADD / MSUB; tied 0 otherwise
 //      alu_op  -> 6-bit op selector (see encoding table below)
-// 
+//
 //  Outputs:
 //      y       -> 64-bit result
 //      mul_hi  -> upper 64-bits of the (a x b) product, always available
 //                 (datapath uses this for mem_to_reg = 11)
 //      nzcv    -> 4-bit flag bundle from the main adder/subtractor path
 //                 {N, Z, C, V} meaningful for ADD/SUB family only
-// 
+//
 //  alu_op Encoding:
 //      000000 ADD    000001 SUB    000010 AND    000011 ORR
 //      000100 EOR    000101 BIC    000110 ORN    000111 EON
 //      001000 LSL    001001 LSR    001010 ASR    001011 ROR
 //      001100 MUL    001101 SMULH  001110 UMULH  001111 MADD
-//      010000 MSUB   010001 SDIV   010010 UDIV   010011 PASS_B
-// 
-// 
+//      010000 MSUB   010001 SDIV*  010010 UDIV*  010011 PASS_B
+//      (* handled by external div64 unit)
+//
 //  Operation selection uses one-hot AND masks -> OR-tree (instead of a large
 //  MUX), since the same primitives (and, or) with array instances express the
 //  fan-out cleanly.
@@ -56,7 +60,7 @@ module alu (
     wire op_add, op_sub, op_and, op_orr, op_eor, op_bic, op_orn, op_eon;
     wire op_lsl, op_lsr, op_asr, op_ror;
     wire op_mul, op_smulh, op_umulh, op_madd, op_msub;
-    wire op_sdiv, op_udiv, op_pass_b;
+    wire op_pass_b;
 
     and a_op_00(op_add, n5, n4, n3, n2, n1, n0); // 000000
     and a_op_01(op_sub, n5, n4, n3, n2, n1, alu_op[0]); // 000001
@@ -75,8 +79,7 @@ module alu (
     and a_op_14(op_umulh, n5, n4, alu_op[3], alu_op[2], alu_op[1], n0); // 001110
     and a_op_15(op_madd, n5, n4, alu_op[3], alu_op[2], alu_op[1], alu_op[0]); // 001111
     and a_op_16(op_msub, n5, alu_op[4], n3, n2, n1, n0); // 010000
-    and a_op_17(op_sdiv, n5, alu_op[4], n3, n2, n1, alu_op[0]); // 010001
-    and a_op_18(op_udiv, n5, alu_op[4], n3, n2, alu_op[1], n0); // 010010
+    // 010001 SDIV, 010010 UDIV — handled by external div64 unit
     and a_op_19(op_pass_b, n5, alu_op[4], n3, n2, alu_op[1], alu_op[0]); // 010011
 
 
@@ -676,19 +679,6 @@ module alu (
         .cin(op_msub)
     );
 
-    // --- Divide via div64_sc ---
-    //   is_signed = op_sdiv; UDIV is unsigned.
-    //   Divide-by-zero is handled inside div64_sc: q = 0, r = dividend.
-    //   Remainder is computed but not exposed by ALU (ISA has no MOD insn).
-    wire [63:0] y_div_q, y_div_r;
-    div64_sc u_div(
-        .quotient(y_div_q),
-        .remainder(y_div_r),
-        .dividend(a),
-        .divisor(b),
-        .is_signed(op_sdiv)
-    );
-
     // --- Final Result mux -- one-hot AND masks + OR-tree ---
     //   For each op, AND its candidate result with the one-hot 'op_*' signal,
     //   then OR everything together.  Because exactly one op_* is high at any
@@ -696,7 +686,7 @@ module alu (
     wire [63:0] m_add, m_sub, m_and, m_orr, m_eor, m_bic, m_orn, m_eon;
     wire [63:0] m_lsl, m_lsr, m_asr, m_ror;
     wire [63:0] m_mul, m_smulh, m_umulh, m_madd, m_msub;
-    wire [63:0] m_sdiv, m_udiv, m_passb;
+    wire [63:0] m_passb;
 
     and a_m_add_00(m_add[0], y_addsub[0], op_add);
     and a_m_add_01(m_add[1], y_addsub[1], op_add);
@@ -1803,136 +1793,6 @@ module alu (
     and a_m_msub_62(m_msub[62], y_madd_msub[62], op_msub);
     and a_m_msub_63(m_msub[63], y_madd_msub[63], op_msub);
 
-    and a_m_sdiv_00(m_sdiv[0], y_div_q[0], op_sdiv);
-    and a_m_sdiv_01(m_sdiv[1], y_div_q[1], op_sdiv);
-    and a_m_sdiv_02(m_sdiv[2], y_div_q[2], op_sdiv);
-    and a_m_sdiv_03(m_sdiv[3], y_div_q[3], op_sdiv);
-    and a_m_sdiv_04(m_sdiv[4], y_div_q[4], op_sdiv);
-    and a_m_sdiv_05(m_sdiv[5], y_div_q[5], op_sdiv);
-    and a_m_sdiv_06(m_sdiv[6], y_div_q[6], op_sdiv);
-    and a_m_sdiv_07(m_sdiv[7], y_div_q[7], op_sdiv);
-    and a_m_sdiv_08(m_sdiv[8], y_div_q[8], op_sdiv);
-    and a_m_sdiv_09(m_sdiv[9], y_div_q[9], op_sdiv);
-    and a_m_sdiv_10(m_sdiv[10], y_div_q[10], op_sdiv);
-    and a_m_sdiv_11(m_sdiv[11], y_div_q[11], op_sdiv);
-    and a_m_sdiv_12(m_sdiv[12], y_div_q[12], op_sdiv);
-    and a_m_sdiv_13(m_sdiv[13], y_div_q[13], op_sdiv);
-    and a_m_sdiv_14(m_sdiv[14], y_div_q[14], op_sdiv);
-    and a_m_sdiv_15(m_sdiv[15], y_div_q[15], op_sdiv);
-    and a_m_sdiv_16(m_sdiv[16], y_div_q[16], op_sdiv);
-    and a_m_sdiv_17(m_sdiv[17], y_div_q[17], op_sdiv);
-    and a_m_sdiv_18(m_sdiv[18], y_div_q[18], op_sdiv);
-    and a_m_sdiv_19(m_sdiv[19], y_div_q[19], op_sdiv);
-    and a_m_sdiv_20(m_sdiv[20], y_div_q[20], op_sdiv);
-    and a_m_sdiv_21(m_sdiv[21], y_div_q[21], op_sdiv);
-    and a_m_sdiv_22(m_sdiv[22], y_div_q[22], op_sdiv);
-    and a_m_sdiv_23(m_sdiv[23], y_div_q[23], op_sdiv);
-    and a_m_sdiv_24(m_sdiv[24], y_div_q[24], op_sdiv);
-    and a_m_sdiv_25(m_sdiv[25], y_div_q[25], op_sdiv);
-    and a_m_sdiv_26(m_sdiv[26], y_div_q[26], op_sdiv);
-    and a_m_sdiv_27(m_sdiv[27], y_div_q[27], op_sdiv);
-    and a_m_sdiv_28(m_sdiv[28], y_div_q[28], op_sdiv);
-    and a_m_sdiv_29(m_sdiv[29], y_div_q[29], op_sdiv);
-    and a_m_sdiv_30(m_sdiv[30], y_div_q[30], op_sdiv);
-    and a_m_sdiv_31(m_sdiv[31], y_div_q[31], op_sdiv);
-    and a_m_sdiv_32(m_sdiv[32], y_div_q[32], op_sdiv);
-    and a_m_sdiv_33(m_sdiv[33], y_div_q[33], op_sdiv);
-    and a_m_sdiv_34(m_sdiv[34], y_div_q[34], op_sdiv);
-    and a_m_sdiv_35(m_sdiv[35], y_div_q[35], op_sdiv);
-    and a_m_sdiv_36(m_sdiv[36], y_div_q[36], op_sdiv);
-    and a_m_sdiv_37(m_sdiv[37], y_div_q[37], op_sdiv);
-    and a_m_sdiv_38(m_sdiv[38], y_div_q[38], op_sdiv);
-    and a_m_sdiv_39(m_sdiv[39], y_div_q[39], op_sdiv);
-    and a_m_sdiv_40(m_sdiv[40], y_div_q[40], op_sdiv);
-    and a_m_sdiv_41(m_sdiv[41], y_div_q[41], op_sdiv);
-    and a_m_sdiv_42(m_sdiv[42], y_div_q[42], op_sdiv);
-    and a_m_sdiv_43(m_sdiv[43], y_div_q[43], op_sdiv);
-    and a_m_sdiv_44(m_sdiv[44], y_div_q[44], op_sdiv);
-    and a_m_sdiv_45(m_sdiv[45], y_div_q[45], op_sdiv);
-    and a_m_sdiv_46(m_sdiv[46], y_div_q[46], op_sdiv);
-    and a_m_sdiv_47(m_sdiv[47], y_div_q[47], op_sdiv);
-    and a_m_sdiv_48(m_sdiv[48], y_div_q[48], op_sdiv);
-    and a_m_sdiv_49(m_sdiv[49], y_div_q[49], op_sdiv);
-    and a_m_sdiv_50(m_sdiv[50], y_div_q[50], op_sdiv);
-    and a_m_sdiv_51(m_sdiv[51], y_div_q[51], op_sdiv);
-    and a_m_sdiv_52(m_sdiv[52], y_div_q[52], op_sdiv);
-    and a_m_sdiv_53(m_sdiv[53], y_div_q[53], op_sdiv);
-    and a_m_sdiv_54(m_sdiv[54], y_div_q[54], op_sdiv);
-    and a_m_sdiv_55(m_sdiv[55], y_div_q[55], op_sdiv);
-    and a_m_sdiv_56(m_sdiv[56], y_div_q[56], op_sdiv);
-    and a_m_sdiv_57(m_sdiv[57], y_div_q[57], op_sdiv);
-    and a_m_sdiv_58(m_sdiv[58], y_div_q[58], op_sdiv);
-    and a_m_sdiv_59(m_sdiv[59], y_div_q[59], op_sdiv);
-    and a_m_sdiv_60(m_sdiv[60], y_div_q[60], op_sdiv);
-    and a_m_sdiv_61(m_sdiv[61], y_div_q[61], op_sdiv);
-    and a_m_sdiv_62(m_sdiv[62], y_div_q[62], op_sdiv);
-    and a_m_sdiv_63(m_sdiv[63], y_div_q[63], op_sdiv);
-
-    and a_m_udiv_00(m_udiv[0], y_div_q[0], op_udiv);
-    and a_m_udiv_01(m_udiv[1], y_div_q[1], op_udiv);
-    and a_m_udiv_02(m_udiv[2], y_div_q[2], op_udiv);
-    and a_m_udiv_03(m_udiv[3], y_div_q[3], op_udiv);
-    and a_m_udiv_04(m_udiv[4], y_div_q[4], op_udiv);
-    and a_m_udiv_05(m_udiv[5], y_div_q[5], op_udiv);
-    and a_m_udiv_06(m_udiv[6], y_div_q[6], op_udiv);
-    and a_m_udiv_07(m_udiv[7], y_div_q[7], op_udiv);
-    and a_m_udiv_08(m_udiv[8], y_div_q[8], op_udiv);
-    and a_m_udiv_09(m_udiv[9], y_div_q[9], op_udiv);
-    and a_m_udiv_10(m_udiv[10], y_div_q[10], op_udiv);
-    and a_m_udiv_11(m_udiv[11], y_div_q[11], op_udiv);
-    and a_m_udiv_12(m_udiv[12], y_div_q[12], op_udiv);
-    and a_m_udiv_13(m_udiv[13], y_div_q[13], op_udiv);
-    and a_m_udiv_14(m_udiv[14], y_div_q[14], op_udiv);
-    and a_m_udiv_15(m_udiv[15], y_div_q[15], op_udiv);
-    and a_m_udiv_16(m_udiv[16], y_div_q[16], op_udiv);
-    and a_m_udiv_17(m_udiv[17], y_div_q[17], op_udiv);
-    and a_m_udiv_18(m_udiv[18], y_div_q[18], op_udiv);
-    and a_m_udiv_19(m_udiv[19], y_div_q[19], op_udiv);
-    and a_m_udiv_20(m_udiv[20], y_div_q[20], op_udiv);
-    and a_m_udiv_21(m_udiv[21], y_div_q[21], op_udiv);
-    and a_m_udiv_22(m_udiv[22], y_div_q[22], op_udiv);
-    and a_m_udiv_23(m_udiv[23], y_div_q[23], op_udiv);
-    and a_m_udiv_24(m_udiv[24], y_div_q[24], op_udiv);
-    and a_m_udiv_25(m_udiv[25], y_div_q[25], op_udiv);
-    and a_m_udiv_26(m_udiv[26], y_div_q[26], op_udiv);
-    and a_m_udiv_27(m_udiv[27], y_div_q[27], op_udiv);
-    and a_m_udiv_28(m_udiv[28], y_div_q[28], op_udiv);
-    and a_m_udiv_29(m_udiv[29], y_div_q[29], op_udiv);
-    and a_m_udiv_30(m_udiv[30], y_div_q[30], op_udiv);
-    and a_m_udiv_31(m_udiv[31], y_div_q[31], op_udiv);
-    and a_m_udiv_32(m_udiv[32], y_div_q[32], op_udiv);
-    and a_m_udiv_33(m_udiv[33], y_div_q[33], op_udiv);
-    and a_m_udiv_34(m_udiv[34], y_div_q[34], op_udiv);
-    and a_m_udiv_35(m_udiv[35], y_div_q[35], op_udiv);
-    and a_m_udiv_36(m_udiv[36], y_div_q[36], op_udiv);
-    and a_m_udiv_37(m_udiv[37], y_div_q[37], op_udiv);
-    and a_m_udiv_38(m_udiv[38], y_div_q[38], op_udiv);
-    and a_m_udiv_39(m_udiv[39], y_div_q[39], op_udiv);
-    and a_m_udiv_40(m_udiv[40], y_div_q[40], op_udiv);
-    and a_m_udiv_41(m_udiv[41], y_div_q[41], op_udiv);
-    and a_m_udiv_42(m_udiv[42], y_div_q[42], op_udiv);
-    and a_m_udiv_43(m_udiv[43], y_div_q[43], op_udiv);
-    and a_m_udiv_44(m_udiv[44], y_div_q[44], op_udiv);
-    and a_m_udiv_45(m_udiv[45], y_div_q[45], op_udiv);
-    and a_m_udiv_46(m_udiv[46], y_div_q[46], op_udiv);
-    and a_m_udiv_47(m_udiv[47], y_div_q[47], op_udiv);
-    and a_m_udiv_48(m_udiv[48], y_div_q[48], op_udiv);
-    and a_m_udiv_49(m_udiv[49], y_div_q[49], op_udiv);
-    and a_m_udiv_50(m_udiv[50], y_div_q[50], op_udiv);
-    and a_m_udiv_51(m_udiv[51], y_div_q[51], op_udiv);
-    and a_m_udiv_52(m_udiv[52], y_div_q[52], op_udiv);
-    and a_m_udiv_53(m_udiv[53], y_div_q[53], op_udiv);
-    and a_m_udiv_54(m_udiv[54], y_div_q[54], op_udiv);
-    and a_m_udiv_55(m_udiv[55], y_div_q[55], op_udiv);
-    and a_m_udiv_56(m_udiv[56], y_div_q[56], op_udiv);
-    and a_m_udiv_57(m_udiv[57], y_div_q[57], op_udiv);
-    and a_m_udiv_58(m_udiv[58], y_div_q[58], op_udiv);
-    and a_m_udiv_59(m_udiv[59], y_div_q[59], op_udiv);
-    and a_m_udiv_60(m_udiv[60], y_div_q[60], op_udiv);
-    and a_m_udiv_61(m_udiv[61], y_div_q[61], op_udiv);
-    and a_m_udiv_62(m_udiv[62], y_div_q[62], op_udiv);
-    and a_m_udiv_63(m_udiv[63], y_div_q[63], op_udiv);
-
     and a_m_passb_00(m_passb[0], b[0], op_pass_b);
     and a_m_passb_01(m_passb[1], b[1], op_pass_b);
     and a_m_passb_02(m_passb[2], b[2], op_pass_b);
@@ -2261,70 +2121,70 @@ module alu (
     or o_d_62(or_d[62], m_mul[62], m_smulh[62], m_umulh[62], m_madd[62]);
     or o_d_63(or_d[63], m_mul[63], m_smulh[63], m_umulh[63], m_madd[63]);
 
-    or o_e_00(or_e[0], m_msub[0], m_sdiv[0], m_udiv[0], m_passb[0]);
-    or o_e_01(or_e[1], m_msub[1], m_sdiv[1], m_udiv[1], m_passb[1]);
-    or o_e_02(or_e[2], m_msub[2], m_sdiv[2], m_udiv[2], m_passb[2]);
-    or o_e_03(or_e[3], m_msub[3], m_sdiv[3], m_udiv[3], m_passb[3]);
-    or o_e_04(or_e[4], m_msub[4], m_sdiv[4], m_udiv[4], m_passb[4]);
-    or o_e_05(or_e[5], m_msub[5], m_sdiv[5], m_udiv[5], m_passb[5]);
-    or o_e_06(or_e[6], m_msub[6], m_sdiv[6], m_udiv[6], m_passb[6]);
-    or o_e_07(or_e[7], m_msub[7], m_sdiv[7], m_udiv[7], m_passb[7]);
-    or o_e_08(or_e[8], m_msub[8], m_sdiv[8], m_udiv[8], m_passb[8]);
-    or o_e_09(or_e[9], m_msub[9], m_sdiv[9], m_udiv[9], m_passb[9]);
-    or o_e_10(or_e[10], m_msub[10], m_sdiv[10], m_udiv[10], m_passb[10]);
-    or o_e_11(or_e[11], m_msub[11], m_sdiv[11], m_udiv[11], m_passb[11]);
-    or o_e_12(or_e[12], m_msub[12], m_sdiv[12], m_udiv[12], m_passb[12]);
-    or o_e_13(or_e[13], m_msub[13], m_sdiv[13], m_udiv[13], m_passb[13]);
-    or o_e_14(or_e[14], m_msub[14], m_sdiv[14], m_udiv[14], m_passb[14]);
-    or o_e_15(or_e[15], m_msub[15], m_sdiv[15], m_udiv[15], m_passb[15]);
-    or o_e_16(or_e[16], m_msub[16], m_sdiv[16], m_udiv[16], m_passb[16]);
-    or o_e_17(or_e[17], m_msub[17], m_sdiv[17], m_udiv[17], m_passb[17]);
-    or o_e_18(or_e[18], m_msub[18], m_sdiv[18], m_udiv[18], m_passb[18]);
-    or o_e_19(or_e[19], m_msub[19], m_sdiv[19], m_udiv[19], m_passb[19]);
-    or o_e_20(or_e[20], m_msub[20], m_sdiv[20], m_udiv[20], m_passb[20]);
-    or o_e_21(or_e[21], m_msub[21], m_sdiv[21], m_udiv[21], m_passb[21]);
-    or o_e_22(or_e[22], m_msub[22], m_sdiv[22], m_udiv[22], m_passb[22]);
-    or o_e_23(or_e[23], m_msub[23], m_sdiv[23], m_udiv[23], m_passb[23]);
-    or o_e_24(or_e[24], m_msub[24], m_sdiv[24], m_udiv[24], m_passb[24]);
-    or o_e_25(or_e[25], m_msub[25], m_sdiv[25], m_udiv[25], m_passb[25]);
-    or o_e_26(or_e[26], m_msub[26], m_sdiv[26], m_udiv[26], m_passb[26]);
-    or o_e_27(or_e[27], m_msub[27], m_sdiv[27], m_udiv[27], m_passb[27]);
-    or o_e_28(or_e[28], m_msub[28], m_sdiv[28], m_udiv[28], m_passb[28]);
-    or o_e_29(or_e[29], m_msub[29], m_sdiv[29], m_udiv[29], m_passb[29]);
-    or o_e_30(or_e[30], m_msub[30], m_sdiv[30], m_udiv[30], m_passb[30]);
-    or o_e_31(or_e[31], m_msub[31], m_sdiv[31], m_udiv[31], m_passb[31]);
-    or o_e_32(or_e[32], m_msub[32], m_sdiv[32], m_udiv[32], m_passb[32]);
-    or o_e_33(or_e[33], m_msub[33], m_sdiv[33], m_udiv[33], m_passb[33]);
-    or o_e_34(or_e[34], m_msub[34], m_sdiv[34], m_udiv[34], m_passb[34]);
-    or o_e_35(or_e[35], m_msub[35], m_sdiv[35], m_udiv[35], m_passb[35]);
-    or o_e_36(or_e[36], m_msub[36], m_sdiv[36], m_udiv[36], m_passb[36]);
-    or o_e_37(or_e[37], m_msub[37], m_sdiv[37], m_udiv[37], m_passb[37]);
-    or o_e_38(or_e[38], m_msub[38], m_sdiv[38], m_udiv[38], m_passb[38]);
-    or o_e_39(or_e[39], m_msub[39], m_sdiv[39], m_udiv[39], m_passb[39]);
-    or o_e_40(or_e[40], m_msub[40], m_sdiv[40], m_udiv[40], m_passb[40]);
-    or o_e_41(or_e[41], m_msub[41], m_sdiv[41], m_udiv[41], m_passb[41]);
-    or o_e_42(or_e[42], m_msub[42], m_sdiv[42], m_udiv[42], m_passb[42]);
-    or o_e_43(or_e[43], m_msub[43], m_sdiv[43], m_udiv[43], m_passb[43]);
-    or o_e_44(or_e[44], m_msub[44], m_sdiv[44], m_udiv[44], m_passb[44]);
-    or o_e_45(or_e[45], m_msub[45], m_sdiv[45], m_udiv[45], m_passb[45]);
-    or o_e_46(or_e[46], m_msub[46], m_sdiv[46], m_udiv[46], m_passb[46]);
-    or o_e_47(or_e[47], m_msub[47], m_sdiv[47], m_udiv[47], m_passb[47]);
-    or o_e_48(or_e[48], m_msub[48], m_sdiv[48], m_udiv[48], m_passb[48]);
-    or o_e_49(or_e[49], m_msub[49], m_sdiv[49], m_udiv[49], m_passb[49]);
-    or o_e_50(or_e[50], m_msub[50], m_sdiv[50], m_udiv[50], m_passb[50]);
-    or o_e_51(or_e[51], m_msub[51], m_sdiv[51], m_udiv[51], m_passb[51]);
-    or o_e_52(or_e[52], m_msub[52], m_sdiv[52], m_udiv[52], m_passb[52]);
-    or o_e_53(or_e[53], m_msub[53], m_sdiv[53], m_udiv[53], m_passb[53]);
-    or o_e_54(or_e[54], m_msub[54], m_sdiv[54], m_udiv[54], m_passb[54]);
-    or o_e_55(or_e[55], m_msub[55], m_sdiv[55], m_udiv[55], m_passb[55]);
-    or o_e_56(or_e[56], m_msub[56], m_sdiv[56], m_udiv[56], m_passb[56]);
-    or o_e_57(or_e[57], m_msub[57], m_sdiv[57], m_udiv[57], m_passb[57]);
-    or o_e_58(or_e[58], m_msub[58], m_sdiv[58], m_udiv[58], m_passb[58]);
-    or o_e_59(or_e[59], m_msub[59], m_sdiv[59], m_udiv[59], m_passb[59]);
-    or o_e_60(or_e[60], m_msub[60], m_sdiv[60], m_udiv[60], m_passb[60]);
-    or o_e_61(or_e[61], m_msub[61], m_sdiv[61], m_udiv[61], m_passb[61]);
-    or o_e_62(or_e[62], m_msub[62], m_sdiv[62], m_udiv[62], m_passb[62]);
-    or o_e_63(or_e[63], m_msub[63], m_sdiv[63], m_udiv[63], m_passb[63]);
+    or o_e_00(or_e[0], m_msub[0], m_passb[0]);
+    or o_e_01(or_e[1], m_msub[1], m_passb[1]);
+    or o_e_02(or_e[2], m_msub[2], m_passb[2]);
+    or o_e_03(or_e[3], m_msub[3], m_passb[3]);
+    or o_e_04(or_e[4], m_msub[4], m_passb[4]);
+    or o_e_05(or_e[5], m_msub[5], m_passb[5]);
+    or o_e_06(or_e[6], m_msub[6], m_passb[6]);
+    or o_e_07(or_e[7], m_msub[7], m_passb[7]);
+    or o_e_08(or_e[8], m_msub[8], m_passb[8]);
+    or o_e_09(or_e[9], m_msub[9], m_passb[9]);
+    or o_e_10(or_e[10], m_msub[10], m_passb[10]);
+    or o_e_11(or_e[11], m_msub[11], m_passb[11]);
+    or o_e_12(or_e[12], m_msub[12], m_passb[12]);
+    or o_e_13(or_e[13], m_msub[13], m_passb[13]);
+    or o_e_14(or_e[14], m_msub[14], m_passb[14]);
+    or o_e_15(or_e[15], m_msub[15], m_passb[15]);
+    or o_e_16(or_e[16], m_msub[16], m_passb[16]);
+    or o_e_17(or_e[17], m_msub[17], m_passb[17]);
+    or o_e_18(or_e[18], m_msub[18], m_passb[18]);
+    or o_e_19(or_e[19], m_msub[19], m_passb[19]);
+    or o_e_20(or_e[20], m_msub[20], m_passb[20]);
+    or o_e_21(or_e[21], m_msub[21], m_passb[21]);
+    or o_e_22(or_e[22], m_msub[22], m_passb[22]);
+    or o_e_23(or_e[23], m_msub[23], m_passb[23]);
+    or o_e_24(or_e[24], m_msub[24], m_passb[24]);
+    or o_e_25(or_e[25], m_msub[25], m_passb[25]);
+    or o_e_26(or_e[26], m_msub[26], m_passb[26]);
+    or o_e_27(or_e[27], m_msub[27], m_passb[27]);
+    or o_e_28(or_e[28], m_msub[28], m_passb[28]);
+    or o_e_29(or_e[29], m_msub[29], m_passb[29]);
+    or o_e_30(or_e[30], m_msub[30], m_passb[30]);
+    or o_e_31(or_e[31], m_msub[31], m_passb[31]);
+    or o_e_32(or_e[32], m_msub[32], m_passb[32]);
+    or o_e_33(or_e[33], m_msub[33], m_passb[33]);
+    or o_e_34(or_e[34], m_msub[34], m_passb[34]);
+    or o_e_35(or_e[35], m_msub[35], m_passb[35]);
+    or o_e_36(or_e[36], m_msub[36], m_passb[36]);
+    or o_e_37(or_e[37], m_msub[37], m_passb[37]);
+    or o_e_38(or_e[38], m_msub[38], m_passb[38]);
+    or o_e_39(or_e[39], m_msub[39], m_passb[39]);
+    or o_e_40(or_e[40], m_msub[40], m_passb[40]);
+    or o_e_41(or_e[41], m_msub[41], m_passb[41]);
+    or o_e_42(or_e[42], m_msub[42], m_passb[42]);
+    or o_e_43(or_e[43], m_msub[43], m_passb[43]);
+    or o_e_44(or_e[44], m_msub[44], m_passb[44]);
+    or o_e_45(or_e[45], m_msub[45], m_passb[45]);
+    or o_e_46(or_e[46], m_msub[46], m_passb[46]);
+    or o_e_47(or_e[47], m_msub[47], m_passb[47]);
+    or o_e_48(or_e[48], m_msub[48], m_passb[48]);
+    or o_e_49(or_e[49], m_msub[49], m_passb[49]);
+    or o_e_50(or_e[50], m_msub[50], m_passb[50]);
+    or o_e_51(or_e[51], m_msub[51], m_passb[51]);
+    or o_e_52(or_e[52], m_msub[52], m_passb[52]);
+    or o_e_53(or_e[53], m_msub[53], m_passb[53]);
+    or o_e_54(or_e[54], m_msub[54], m_passb[54]);
+    or o_e_55(or_e[55], m_msub[55], m_passb[55]);
+    or o_e_56(or_e[56], m_msub[56], m_passb[56]);
+    or o_e_57(or_e[57], m_msub[57], m_passb[57]);
+    or o_e_58(or_e[58], m_msub[58], m_passb[58]);
+    or o_e_59(or_e[59], m_msub[59], m_passb[59]);
+    or o_e_60(or_e[60], m_msub[60], m_passb[60]);
+    or o_e_61(or_e[61], m_msub[61], m_passb[61]);
+    or o_e_62(or_e[62], m_msub[62], m_passb[62]);
+    or o_e_63(or_e[63], m_msub[63], m_passb[63]);
 
     wire [63:0] or_abcd;
     or o_abcd_00(or_abcd[0], or_a[0], or_b[0], or_c[0], or_d[0]);
