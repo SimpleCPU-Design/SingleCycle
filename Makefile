@@ -20,7 +20,8 @@ RTL_ADD := rtl/arith/adder64.v
 RTL_SHIFT := rtl/arith/barrel_shift.v
 RTL_MULT := rtl/arith/mul64.v
 RTL_DIV_SC := rtl/arith/div64_sc.v
-RTL_ARITH := $(RTL_ADD) $(RTL_SHIFT) $(RTL_MULT) $(RTL_DIV_SC)
+RTL_DIV := rtl/arith/div64.v
+RTL_ARITH := $(RTL_ADD) $(RTL_SHIFT) $(RTL_MULT) $(RTL_DIV_SC) $(RTL_DIV)
 
 RTL_ALU := rtl/alu/alu.v
 RTL_ALU_CONTROL :=  rtl/alu/alu_control.v
@@ -35,7 +36,8 @@ TB_ADD := tb/arith/tb_adder64.v
 TB_SHIFT := tb/arith/tb_barrel_shift.v
 TB_MULT := tb/arith/tb_mul64.v
 TB_DIV_SC := tb/arith/tb_div64_sc.v
-TB_ARITH := $(TB_ADD) $(TB_SHIFT) $(TB_MULT) $(TB_DIV_SC)
+TB_DIV := tb/arith/tb_div64.v
+TB_ARITH := $(TB_ADD) $(TB_SHIFT) $(TB_MULT) $(TB_DIV_SC) $(TB_DIV)
 
 TB_ALU := tb/alu/tb_alu.v
 TB_ALU_CONTROL := tb/alu/tb_alu_control.v
@@ -50,6 +52,7 @@ BIN_ADD := $(SIM_DIR)/tb_adder64
 BIN_SHIFT := $(SIM_DIR)/tb_barrel_shift
 BIN_MULT := $(SIM_DIR)/tb_mul64
 BIN_DIV_SC := $(SIM_DIR)/tb_div64_sc
+BIN_DIV := $(SIM_DIR)/tb_div64
 BIN_ARITH := $(SIM_DIR)/tb_arith
 
 BIN_ALU := $(SIM_DIR)/tb_alu
@@ -64,15 +67,16 @@ VDIR_ADD  := $(VSIM_DIR)/tb_adder64
 VDIR_SHIFT:= $(VSIM_DIR)/tb_barrel_shift
 VDIR_MULT := $(VSIM_DIR)/tb_mul64
 VDIR_DIV_SC := $(VSIM_DIR)/tb_div64_sc
+VDIR_DIV := $(VSIM_DIR)/tb_div64
 
 VDIR_ALU := $(VSIM_DIR)/tb_alu
 VDIR_ALU_CONTROL := $(VSIM_DIR)/tb_alu_control
 
 .PHONY: all compile run wave clean \
-		compile_prims compile_adder compile_shifter compile_mult compile_div_sc compile_alu compile_alu_control \
-		run_prims run_adder run_shifter run_mult run_div_sc run_alu run_alu_control \
-		vcompile_prims vcompile_adder vcompile_shifter vcompile_mult vcompile_div_sc vcompile_alu vcompile_alu_control \
-		vrun_prims vrun_adder vrun_shifter vrun_mult vrun_div_sc vrun_alu vrun_alu_control vclean
+		compile_prims compile_adder compile_shifter compile_mult compile_div_sc compile_div compile_alu compile_alu_control \
+		run_prims run_adder run_shifter run_mult run_div_sc run_div run_alu run_alu_control \
+		vcompile_prims vcompile_adder vcompile_shifter vcompile_mult vcompile_div_sc vcompile_div vcompile_alu vcompile_alu_control \
+		vrun_prims vrun_adder vrun_shifter vrun_mult vrun_div_sc vrun_div vrun_alu vrun_alu_control vclean
 
 # Default -> compile + run all
 all: run
@@ -104,6 +108,11 @@ compile_div_sc:
 	@mkdir -p $(SIM_DIR)
 	$(IVERILOG) $(IFLAGS) -o $(BIN_DIV_SC) \
 	  $(TB_DIV_SC) $(RTL_PRIMS) $(RTL_ADD) $(RTL_DIV_SC)
+
+compile_div:
+	@mkdir -p $(SIM_DIR)
+	$(IVERILOG) $(IFLAGS) -o $(BIN_DIV) \
+	  $(TB_DIV) $(RTL_PRIMS) $(RTL_ADD) $(RTL_DIV)
 
 compile_arith:
 	@mkdir -p $(SIM_DIR)
@@ -138,6 +147,9 @@ run_mult: compile_mult
 
 run_div_sc: compile_div_sc
 	$(VVP) $(BIN_DIV_SC)
+
+run_div: compile_div_sc
+	$(VVP) $(BIN_DIV)
 
 run_arith: compile_arith
 	$(VVP) $(BIN_ARITH)
@@ -185,6 +197,11 @@ vcompile_div_sc:
 	$(VERILATOR) $(VFLAGS) --top-module tb_div64_sc --Mdir $(VDIR_DIV_SC) \
 	  $(TB_DIV_SC) $(RTL_PRIMS) $(RTL_ADD) $(RTL_DIV_SC)
 
+vcompile_div:
+	@mkdir -p $(VDIR_DIV)
+	$(VERILATOR) $(VFLAGS) --top-module tb_div64 --Mdir $(VDIR_DIV) \
+	  $(TB_DIV) $(RTL_PRIMS) $(RTL_ADD) $(RTL_DIV)
+
 vcompile_alu:
 	@mkdir -p $(VDIR_ALU)
 	$(VERILATOR) $(VFLAGS) --top-module tb_alu --Mdir $(VDIR_ALU) \
@@ -209,6 +226,9 @@ vrun_mult: vcompile_mult
 
 vrun_div_sc: vcompile_div_sc
 	./$(VDIR_DIV_SC)/Vtb_div64_sc
+
+vrun_div: vcompile_div
+	./$(VDIR_DIV)/Vtb_div64
 
 vrun_alu: vcompile_alu
 	./$(VDIR_ALU)/Vtb_alu
