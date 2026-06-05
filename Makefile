@@ -27,6 +27,7 @@ RTL_ALU := rtl/alu/alu.v
 RTL_ALU_CONTROL :=  rtl/alu/alu_control.v
 
 RTL_PC := rtl/core/pc.v
+RTL_CONTROL := rtl/core/control.v
 
 RTL_COMMON := $(RTL_PRIMS) $(RTL_ARITH)
 
@@ -44,6 +45,7 @@ TB_ALU := tb/alu/tb_alu.v
 TB_ALU_CONTROL := tb/alu/tb_alu_control.v
 
 TB_PC := tb/core/tb_pc.v
+TB_CONTROL := tb/core/tb_control.v
 
 
 # Simulation Binaries
@@ -62,6 +64,7 @@ BIN_ALU := $(SIM_DIR)/tb_alu
 BIN_ALU_CONTROL := $(SIM_DIR)/tb_alu_control
 
 BIN_PC := $(SIM_DIR)/tb_pc
+BIN_CONTROL := $(SIM_DIR)/tb_control
 
 VCD := $(SIM_DIR)/dump.vcd
 
@@ -77,12 +80,13 @@ VDIR_DIV := $(VSIM_DIR)/tb_div64
 VDIR_ALU := $(VSIM_DIR)/tb_alu
 VDIR_ALU_CONTROL := $(VSIM_DIR)/tb_alu_control
 VDIR_PC := $(VSIM_DIR)/tb_pc
+VDIR_CONTROL := $(VSIM_DIR)/tb_control
 
 .PHONY: all compile run wave clean \
-		compile_prims compile_adder compile_shifter compile_mult compile_div_sc compile_div compile_arith compile_alu compile_alu_control compile_pc \
-		run_prims run_adder run_shifter run_mult run_div_sc run_div run_arith run_alu run_alu_control run_pc \
-		vcompile_prims vcompile_adder vcompile_shifter vcompile_mult vcompile_div_sc vcompile_div vcompile_alu vcompile_alu_control vcompile_pc \
-		vrun_prims vrun_adder vrun_shifter vrun_mult vrun_div_sc vrun_div vrun_alu vrun_alu_control vrun_pc vclean
+		compile_prims compile_adder compile_shifter compile_mult compile_div_sc compile_div compile_arith compile_alu compile_alu_control compile_pc compile_control \
+		run_prims run_adder run_shifter run_mult run_div_sc run_div run_arith run_alu run_alu_control run_pc run_control \
+		vcompile_prims vcompile_adder vcompile_shifter vcompile_mult vcompile_div_sc vcompile_div vcompile_alu vcompile_alu_control vcompile_pc vcompile_control \
+		vrun_prims vrun_adder vrun_shifter vrun_mult vrun_div_sc vrun_div vrun_alu vrun_alu_control vrun_pc vrun_control vclean
 
 # Default -> compile + run all
 all: run
@@ -140,6 +144,11 @@ compile_pc:
 	$(IVERILOG) $(IFLAGS) -o $(BIN_PC) \
 	$(TB_PC) $(RTL_PC) $(RTL_PRIMS) $(RTL_ADD)
 
+compile_control:
+	@mkdir -p $(SIM_DIR)
+	$(IVERILOG) $(IFLAGS) -o $(BIN_CONTROL) \
+	$(TB_CONTROL) $(RTL_CONTROL)
+
 
 # Run Targets
 run: run_prims run_arith
@@ -173,6 +182,9 @@ run_alu_control: compile_alu_control
 
 run_pc: compile_pc
 	$(VVP) $(BIN_PC)
+
+run_control: compile_control
+	$(VVP) $(BIN_CONTROL)
 
 
 # Wave Targets (run + wave)
@@ -231,6 +243,11 @@ vcompile_pc:
 	$(VERILATOR) $(VFLAGS) --top-module tb_pc --Mdir $(VDIR_PC) \
 	  $(TB_PC) $(RTL_PC) $(RTL_PRIMS) $(RTL_ADD)
 
+vcompile_control:
+	@mkdir -p $(VDIR_CONTROL)
+	$(VERILATOR) $(VFLAGS) --top-module tb_control --Mdir $(VDIR_CONTROL) \
+	  $(TB_CONTROL) $(RTL_CONTROL)
+
 vrun_prims: vcompile_prims
 	./$(VDIR_PRIM)/Vtb_primitives
 
@@ -258,6 +275,8 @@ vrun_alu_control: vcompile_alu_control
 vrun_pc: vcompile_pc
 	./$(VDIR_PC)/Vtb_pc
 
+vrun_control: vcompile_control
+	./$(VDIR_CONTROL)/Vtb_control
 
 vclean:
 	rm -rf $(VSIM_DIR)
