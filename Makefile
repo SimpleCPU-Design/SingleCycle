@@ -26,6 +26,11 @@ RTL_ARITH := $(RTL_ADD) $(RTL_SHIFT) $(RTL_MULT) $(RTL_DIV_SC) $(RTL_DIV)
 RTL_ALU := rtl/alu/alu.v
 RTL_ALU_CONTROL :=  rtl/alu/alu_control.v
 
+RTL_REG := rtl/mem/reg64.v
+RTL_REGFILE := rtl/mem/reg_file.v
+RTL_IMEM := rtl/mem/instruction_mem.v
+RTL_DMEM := rtl/mem/data_memory.v
+
 
 RTL_COMMON := $(RTL_PRIMS) $(RTL_ARITH)
 
@@ -41,6 +46,8 @@ TB_ARITH := $(TB_ADD) $(TB_SHIFT) $(TB_MULT) $(TB_DIV_SC) $(TB_DIV)
 
 TB_ALU := tb/alu/tb_alu.v
 TB_ALU_CONTROL := tb/alu/tb_alu_control.v
+
+TB_IMEM := tb/mem/tb_instruction_mem.v
 
 
 # Simulation Binaries
@@ -58,6 +65,8 @@ BIN_ARITH := $(SIM_DIR)/tb_arith
 BIN_ALU := $(SIM_DIR)/tb_alu
 BIN_ALU_CONTROL := $(SIM_DIR)/tb_alu_control
 
+BIN_IMEM := $(SIM_DIR)/tb_instruction_mem
+
 VCD := $(SIM_DIR)/dump.vcd
 
 # Verilator build dirs
@@ -71,6 +80,8 @@ VDIR_DIV := $(VSIM_DIR)/tb_div64
 
 VDIR_ALU := $(VSIM_DIR)/tb_alu
 VDIR_ALU_CONTROL := $(VSIM_DIR)/tb_alu_control
+
+VDIR_IMEM := $(VSIM_DIR)/tb_instruction_mem
 
 .PHONY: all compile run wave clean \
 		compile_prims compile_adder compile_shifter compile_mult compile_div_sc compile_div compile_alu compile_alu_control \
@@ -212,6 +223,16 @@ vcompile_alu_control:
 	$(VERILATOR) $(VFLAGS) --top-module tb_alu_control --Mdir $(VDIR_ALU_CONTROL) \
 	  $(TB_ALU_CONTROL) $(RTL_ALU_CONTROL) $(RTL_PRIMS) $(RTL_ARITH)
 
+vcompile_alu_control:
+	@mkdir -p $(VDIR_ALU_CONTROL)
+	$(VERILATOR) $(VFLAGS) --top-module tb_alu_control --Mdir $(VDIR_ALU_CONTROL) \
+	  $(TB_ALU_CONTROL) $(RTL_ALU_CONTROL) $(RTL_PRIMS) $(RTL_ARITH)
+
+vcompile_imem:
+	@mkdir -p $(VDIR_IMEM)
+	$(VERILATOR) $(VFLAGS) --top-module tb_instruction_mem --Mdir $(VDIR_IMEM) \
+	  $(TB_IMEM) $(RTL_IMEM)
+
 vrun_prims: vcompile_prims
 	./$(VDIR_PRIM)/Vtb_primitives
 
@@ -235,6 +256,9 @@ vrun_alu: vcompile_alu
 
 vrun_alu_control: vcompile_alu_control
 	./$(VDIR_ALU_CONTROL)/Vtb_alu_control
+
+vrun_imem: vcompile_imem
+	./$(VDIR_IMEM)/Vtb_instruction_mem
 	
 
 vclean:
