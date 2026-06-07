@@ -16,7 +16,7 @@
 //  The ISA encoding is prefix-free across these widths, so at most one decode
 //  line fires for any opcode.
 //
-//  Output signal table (CLAUDE.md + imm_sel from DESIGN_NOTES #1):
+//  Output signal table:
 //    reg_write     1   write the register file
 //    alu_src       1   0 = Rm, 1 = immediate (ALU operand B)
 //    mem_to_reg    2   00 = ALU, 01 = Mem, 10 = PC+4 (BL/BLR link), 11 = MUL hi
